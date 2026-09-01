@@ -75,6 +75,15 @@ echo "<div class='action_bar' id='action_bar'>\n";
 echo "	<div class='heading'><b>".$text['title-language_model']."</b></div>\n";
 echo "	<div class='actions'>\n";
 
+if (permission_exists('language_model_prompt_template_view')) {
+    echo button::create([
+	    'type' => 'link',
+	    'label' => $text['label-language_model_prompt_templates'],
+	    'icon' => $settings->get('theme','button_icon_list'),
+	    'link' => 'prompt_templates.php'
+    ]);
+}
+
 if (permission_exists('language_model_upload')) {
 	echo 	"<input name='action' type='hidden' value='upload'>\n";
 	echo 	"<input type='hidden' name='".$token['name']."' value='".$token['hash']."'>\n";

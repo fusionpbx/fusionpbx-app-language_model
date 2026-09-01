@@ -86,12 +86,12 @@ if (permission_exists('language_model_upload') && !empty($_FILES['file']['tmp_na
 
 	$file_content_base64 = base64_encode(file_get_contents($file['tmp_name']));
 
-	$request_data['prompt'] = $request_text;
+	$request_data['prompt'] = $assistant->build_prompt('maintenance', $request_text);
 	$request_data['images'][] = $file_content_base64;
 	$response = $assistant->request($model, $request_data);
 }
 else {
-	$request_data['prompt'] = $request_text;
+	$request_data['prompt'] = $assistant->build_prompt('maintenance', $request_text);
 	$response = $assistant->request($model, $request_data);
 }
 

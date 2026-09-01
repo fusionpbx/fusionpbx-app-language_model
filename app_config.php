@@ -3,11 +3,11 @@
 //application details
 	$apps[$x]['name'] = 'Language Model';
 	$apps[$x]['uuid'] = 'a354fd53-2217-4e2e-b922-2daba2fc167a';
-		$apps[$x]['category'] = 'AI';
-		$apps[$x]['subcategory'] = '';
-		$apps[$x]['version'] = '1.1';
-		$apps[$x]['license'] = '';
-		$apps[$x]['url'] = 'http://www.fusionpbx.com';
+        $apps[$x]['category'] = 'AI';
+        $apps[$x]['subcategory'] = '';
+        $apps[$x]['version'] = '1.1';
+        $apps[$x]['license'] = '';
+        $apps[$x]['url'] = 'http://www.fusionpbx.com';
 	$apps[$x]['description']['en-us'] = 'Language model class interface.';
 
 //permission details
@@ -19,6 +19,22 @@
 	$apps[$x]['permissions'][$y]['name'] = "language_model_upload";
 	$apps[$x]['permissions'][$y]['groups'][] = "superadmin";
 	$y++;
+
+        $apps[$x]['permissions'][$y]['name'] = "language_model_prompt_template_view";
+        $apps[$x]['permissions'][$y]['groups'][] = "superadmin";
+        $y++;
+        $apps[$x]['permissions'][$y]['name'] = "language_model_prompt_template_add";
+        $apps[$x]['permissions'][$y]['groups'][] = "superadmin";
+        $y++;
+        $apps[$x]['permissions'][$y]['name'] = "language_model_prompt_template_edit";
+        $apps[$x]['permissions'][$y]['groups'][] = "superadmin";
+        $y++;
+        $apps[$x]['permissions'][$y]['name'] = "language_model_prompt_template_delete";
+        $apps[$x]['permissions'][$y]['groups'][] = "superadmin";
+        $y++;
+        $apps[$x]['permissions'][$y]['name'] = "language_model_prompt_template_all";
+        $apps[$x]['permissions'][$y]['groups'][] = "superadmin";
+        $y++;
 
 //default settings
 	$y=0;
@@ -55,3 +71,69 @@
 	$apps[$x]['default_settings'][$y]['default_setting_description'] = "Language Model API URL";
 	$y++;
 
+//prompt templates
+        $y=0;
+        $apps[$x]['db'][$y]['table']['name'] = 'v_language_model_prompt_templates';
+        $apps[$x]['db'][$y]['table']['parent'] = '';
+        $z=0;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'language_model_prompt_template_uuid';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = 'uuid';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = 'char(36)';
+        $apps[$x]['db'][$y]['fields'][$z]['key']['type'] = 'primary';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'domain_uuid';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = 'uuid';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = 'char(36)';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'template_language';
+        $apps[$x]['db'][$y]['fields'][$z]['type'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['search'] = 'true';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'template_category';
+        $apps[$x]['db'][$y]['fields'][$z]['type'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['search'] = 'true';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'template_subcategory';
+        $apps[$x]['db'][$y]['fields'][$z]['type'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['search'] = 'true';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'template_name';
+        $apps[$x]['db'][$y]['fields'][$z]['type'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['search'] = 'true';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'template_prompt';
+        $apps[$x]['db'][$y]['fields'][$z]['type'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['search'] = 'true';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'template_model';
+        $apps[$x]['db'][$y]['fields'][$z]['type'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['search'] = 'true';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'template_enabled';
+        $apps[$x]['db'][$y]['fields'][$z]['type'] = 'boolean';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'template_description';
+        $apps[$x]['db'][$y]['fields'][$z]['type'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['search'] = 'true';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'insert_date';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = 'timestamptz';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = 'date';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = 'date';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'insert_user';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = 'uuid';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = 'char(36)';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'update_date';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = 'timestamptz';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = 'date';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = 'date';
+        $z++;
+        $apps[$x]['db'][$y]['fields'][$z]['name'] = 'update_user';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['pgsql'] = 'uuid';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['sqlite'] = 'text';
+        $apps[$x]['db'][$y]['fields'][$z]['type']['mysql'] = 'char(36)';
