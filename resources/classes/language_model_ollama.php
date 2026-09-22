@@ -414,11 +414,9 @@ class language_model_ollama implements language_model_interface {
 
 			// Decode and display JSON response if valid
 			if (json_last_error() === JSON_ERROR_NONE) {
-				if ($endpoint == 'default') {
-					$decoded_response = json_decode($response, true);
-					if (!empty($decoded_response['response'])) {
-						$response = $decoded_response['response'];
-					}
+				$decoded_response = json_decode($response, true);
+				if (!empty($decoded_response['response'])) {
+					$response = $decoded_response['response'];
 				}
 			}
 
