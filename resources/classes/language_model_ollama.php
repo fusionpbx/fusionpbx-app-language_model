@@ -150,7 +150,7 @@ class language_model_ollama implements language_model_interface {
 		// Set default empty string
 		$response = '';
 
-		// Set the url
+		// Set the URL
 		if (empty($this->api_url)) {
 			$this->api_url = 'http://127.0.0.1:11434';
 		}
@@ -182,7 +182,7 @@ class language_model_ollama implements language_model_interface {
 
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
-		// Execute the request Note: The response will be empty if stream is true
+		// Execute the request. Note: The response will be empty if stream is true
 		$response = curl_exec($ch);
 
 		// Check for errors
@@ -203,10 +203,10 @@ class language_model_ollama implements language_model_interface {
 
 		// Decode and display JSON response if valid
 		if (json_last_error() === JSON_ERROR_NONE) {
-				$decoded_response = json_decode($response, true);
-				if (!empty($decoded_response['models'])) {
-					$response = $decoded_response['models'];
-				}
+			$decoded_response = json_decode($response, true);
+			if (!empty($decoded_response['models'])) {
+				$response = $decoded_response['models'];
+			}
 		}
 
 		// Check for JSON error
@@ -257,12 +257,12 @@ class language_model_ollama implements language_model_interface {
 			ob_implicit_flush(true);
 		}
 
-		// Set the url
+		// Set the URL
 		if (empty($this->api_url)) {
 			$this->api_url = 'http://127.0.0.1:11434';
 		}
 
-		// Add the endpoint to the url
+		// Add the endpoint to the URL
 		$api_url = $this->api_url . '/api/generate';
 
 		//if (empty($endpoint) or $endpoint == 'default') {
@@ -383,7 +383,7 @@ class language_model_ollama implements language_model_interface {
 			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 		}
 
-		// Execute the request Note: The response will be empty if stream is true
+		// Execute the request. Note: The response will be empty if stream is true
 		$response = curl_exec($ch);
 
 		// Debugging information
@@ -418,8 +418,8 @@ class language_model_ollama implements language_model_interface {
 					$decoded_response = json_decode($response, true);
 					if (!empty($decoded_response['response'])) {
 						$response = $decoded_response['response'];
-						}
 					}
+				}
 			}
 
 			// Check for JSON error
@@ -477,14 +477,14 @@ class language_model_ollama implements language_model_interface {
 			return $result;
 		}
 
-		// --- Step 1: Determine the language to use ---
+		// Determine the language to use
 		$language = $language ?? $this->detect_language($prompt);
 		$result['language'] = $language;
 
-		// --- Step 2: Collect keywords for that language (with fallbacks) ---
+		// Collect keywords for that language (with fallbacks)
 		$keywords = $this->get_intent_keywords($language);
 
-		// --- Step 3: Detect "read / open / view" intent ---
+		// Detect read, open, view intent words
 		$result['matched_keywords'] = $this->find_intent_keywords($prompt, $keywords);
 
 		// Language heuristics are imperfect, so if the detected language
@@ -509,82 +509,77 @@ class language_model_ollama implements language_model_interface {
 
 		$result['intent'] = true;
 
-		// --- Step 4: Extract an optional URL ---
+		// Extract an optional URL
 		$result['url'] = $this->extract_url($prompt);
 
 		return $result;
 	}
 
-	// ---------------------------------------------------------------------------
-	// Language-specific keyword sets (lowercase for matching)
-	// ---------------------------------------------------------------------------
 
 	/**
+	 * Language-specific keyword sets (lowercase for matching)
+	 *
 	 * @return string[]  Regex-safe keyword patterns for the given language.
 	 */
 	function get_intent_keywords(string $language): array {
 		$sets = [
 			'en' => [
-	 		    '\bread\b', '\bopen\b', '\bview\b', '\blook at\b',
-			    '\bcheck out\b', '\bbrowse\b', '\bshow me\b', '\bfetch\b',
-			    '\bload\b', '\bdisplay\b', '\bget\b', '\bvisit\b',
-			    '\bsee\b', '\bshow\b', '\bpull\b', '\bfetch me\b',
+				'\bread\b', '\bopen\b', '\bview\b', '\blook at\b',
+				'\bcheck out\b', '\bbrowse\b', '\bshow me\b', '\bfetch\b',
+				'\bload\b', '\bdisplay\b', '\bget\b', '\bvisit\b',
+				'\bsee\b', '\bshow\b', '\bpull\b', '\bfetch me\b',
 			],
 			'es' => [
-			    '\blee\b', '\bleer\b', '\babre\b', '\babrir\b',
-			    '\bmira\b', '\bver\b', '\bvisita\b', '\bcarga\b',
-			    '\bmostrame\b', '\bmuéstrame\b', '\bobtén\b', '\bobtener\b',
-			    '\brecupera\b', '\brecuperar\b', '\bdescarga\b', '\btrae\b',
+				'\blee\b', '\bleer\b', '\babre\b', '\babrir\b',
+				'\bmira\b', '\bver\b', '\bvisita\b', '\bcarga\b',
+				'\bmostrame\b', '\bmuéstrame\b', '\bobtén\b', '\bobtener\b',
+				'\brecupera\b', '\brecuperar\b', '\bdescarga\b', '\btrae\b',
 			],
 			'fr' => [
-			    '\blis\b', '\blire\b', '\bouvre\b', '\bouvrir\b',
-			    '\bregarde\b', '\bvoir\b', '\bvisite\b', '\bcharge\b',
-			    '\bmontre\b', '\bmoi\b', '\brécupère\b', '\brobtenir\b',
-			    '\bdescends\b', '\bva voir\b', '\bregarde ce\b',
+				'\blis\b', '\blire\b', '\bouvre\b', '\bouvrir\b',
+				'\bregarde\b', '\bvoir\b', '\bvisite\b', '\bcharge\b',
+				'\bmontre\b', '\bmoi\b', '\brécupère\b', '\brobtenir\b',
+				'\bdescends\b', '\bva voir\b', '\bregarde ce\b',
 			],
 			'de' => [
-			    '\blies\b', '\blesen\b', '\böffne\b', '\böffnen\b',
-			    '\bschau\b', '\banschau\b', '\bbesuche\b', '\blade\b',
-			    '\bzeige\b', '\bmir\b', '\bhole\b', '\bholen\b',
-			    '\bhole dir\b', '\bholt\b', '\brufe auf\b',
+				'\blies\b', '\blesen\b', '\böffne\b', '\böffnen\b',
+				'\bschau\b', '\banschau\b', '\bbesuche\b', '\blade\b',
+				'\bzeige\b', '\bmir\b', '\bhole\b', '\bholen\b',
+				'\bhole dir\b', '\bholt\b', '\brufe auf\b',
 			],
 			'it' => [
-			    '\bleggi\b', '\bleggere\b', '\bapri\b', '\baprire\b',
-			    '\bguarda\b', '\bvedi\b', '\bvisita\b', '\bcarica\b',
-			    '\bmostrami\b', '\bottenere\b', '\bobtieni\b', '\brecupera\b',
+				'\bleggi\b', '\bleggere\b', '\bapri\b', '\baprire\b',
+				'\bguarda\b', '\bvedi\b', '\bvisita\b', '\bcarica\b',
+				'\bmostrami\b', '\bottenere\b', '\bobtieni\b', '\brecupera\b',
 			],
 			'pt' => [
-			    '\bleia\b', '\bler\b', '\babra\b', '\babrir\b',
-			    '\bveja\b', '\bver\b', '\bvisite\b', '\bcarregue\b',
-			    '\bmostra\b', '\bobtenha\b', '\bobter\b', '\brecupere\b',
-			    '\bbusca\b',
+				'\bleia\b', '\bler\b', '\babra\b', '\babrir\b',
+				'\bveja\b', '\bver\b', '\bvisite\b', '\bcarregue\b',
+				'\bmostra\b', '\bobtenha\b', '\bobter\b', '\brecupere\b',
+				'\bbusca\b',
 			],
 			'zh' => [
-			    '读取', '打开', '查看', '看看', '浏览',
-			    '获取', '加载', '显示', '访问', '拉取',
+				'读取', '打开', '查看', '看看', '浏览',
+				'获取', '加载', '显示', '访问', '拉取',
 			],
 			'ja' => [
-			    '読み取る', '開く', '見る', '閲覧する',
-			    '取得する', '表示する', '訪れる', '見せて',
+				'読み取る', '開く', '見る', '閲覧する',
+				'取得する', '表示する', '訪れる', '見せて',
 			],
 			'ko' => [
-			    '읽어', '열어', '보기', '열람', '조회',
-			    '가져오', '표시', '방문',
+				'읽어', '열어', '보기', '열람', '조회',
+				'가져오', '표시', '방문',
 			],
 			'nl' => [
-			    '\bles\b', '\blesen\b', '\bopen\b', '\bopener\b',
-			    '\bek\bbekijk\b', '\bekken\b', '\bzoek\b', '\bhaal\b',
-			    '\btoon\b', '\btonen\b', '\bbezoek\b', '\blaad\b',
+				'\bles\b', '\blesen\b', '\bopen\b', '\bopener\b',
+				'\bek\bbekijk\b', '\bekken\b', '\bzoek\b', '\bhaal\b',
+				'\btoon\b', '\btonen\b', '\bbezoek\b', '\blaad\b',
 			],
 		];
 
 		// Fallback: English keywords if language not in our list
 		return $sets[$language] ?? $sets['en'];
 	}
-
-	// ---------------------------------------------------------------------------
-	// Matching helpers
-	// ---------------------------------------------------------------------------
 
 	/**
 	 * Find which intent keywords appear in the prompt (case-insensitive).
@@ -610,20 +605,22 @@ class language_model_ollama implements language_model_interface {
 	/**
 	 * Extract the first valid URL found in the text.
 	 * Supports http(s), ftp, and protocol-less domains.
+	 *
+	 * 
 	 */
 	function extract_url(string $text): ?string	{
 		$pattern = '/
 			(?:
-			    (?:https?|ftp):\/\/
-			    (?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}
-			    (?:\/[^\s<>"\'|^`]*)?
+				(?:https?|ftp):\/\/
+				(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}
+				(?:\/[^\s<>"\'|^`]*)?
 			)
 			|
 			(?:
-			    (?<![\w.-])
-			    (?:www\.)?
-			    (?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}
-			    (?:\/[^\s<>"\'|^`]*)?
+				(?<![\w.-])
+				(?:www\.)?
+				(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}
+				(?:\/[^\s<>"\'|^`]*)?
 			)
 		/ix';
 
@@ -632,7 +629,7 @@ class language_model_ollama implements language_model_interface {
 
 			// Normalise: if no scheme, prepend https://
 			if (!preg_match('/^[a-z]+:\/\//i', $url)) {
-			    $url = 'https://' . $url;
+				$url = 'https://' . $url;
 			}
 
 			return $url;
@@ -674,7 +671,7 @@ class language_model_ollama implements language_model_interface {
 
 		foreach ($checks as $lang => $regex) {
 			if (preg_match($regex, $text)) {
-			    return $lang;
+				return $lang;
 			}
 		}
 
