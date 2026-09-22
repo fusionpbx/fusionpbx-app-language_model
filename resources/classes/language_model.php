@@ -57,6 +57,44 @@ class language_model {
 	/**
 	 * request
 	 */
+
+        /**
+         * get_prompt_template
+         */
+        public function get_prompt_template(string $category) : string {
+                global $database;
+
+                $sql = "
+                        select template_prompt
+                        from v_language_model_prompt_templates
+                        where template_category = :category
+                        and template_enabled = true
+                        order by template_name
+                        limit 1
+                ";
+
+                $result = $database->select(
+                        $sql,
+                        ['category' => $category],
+                        'column'
+                );
+
+                return $result ?: '';
+        }
+
+        /**
+         * build_prompt
+         */
+        public function build_prompt(string $category, string $runtime_data) : string {
+                $template = $this->get_prompt_template($category);
+
+                if (empty($template)) {
+                        return $runtime_data;
+                }
+
+                return str_replace('{{maintenance_data}}', $runtime_data, $template);
+        }
+
 	public function request($model, $content) : string {
 		if (!empty($this->engine)) {
 			//set the class interface to use the _template suffix
