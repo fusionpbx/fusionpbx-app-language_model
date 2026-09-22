@@ -131,10 +131,10 @@ class language_model_openai implements language_model_interface {
 		curl_setopt_array($ch, [
 			CURLOPT_URL => $safe_url,
 			CURLOPT_RETURNTRANSFER => true,
-			CURLOPT_FOLLOWLOCATION => false,	   // No redirects (prevents bypass)
+			CURLOPT_FOLLOWLOCATION => false,	// No redirects (prevents bypass)
 			CURLOPT_CONNECTTIMEOUT => 5,
 			CURLOPT_TIMEOUT => 15,
-			CURLOPT_MAXFILESIZE => $max_bytes,	 // Hard cap on response size
+			CURLOPT_MAXFILESIZE => $max_bytes,	// Hard cap on response size
 			CURLOPT_HTTPHEADER => $headers,
 			CURLOPT_SSL_VERIFYPEER => true,
 			CURLOPT_SSL_VERIFYHOST => 2,
@@ -172,9 +172,9 @@ class language_model_openai implements language_model_interface {
 			(?<![\w.-])                    # not preceded by word char, dot, or dash
 			(?:www\.)?                    # optional www
 			(?:                            # domain
-			    [a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?
-			    (?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*
-			    \.[a-z]{2,63}
+				[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?
+				(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*
+				\.[a-z]{2,63}
 			)
 			(?::\d+)?                     # optional port
 			(?:/[^\s<>"\'|^`]*)?          # path + query + fragment
@@ -368,7 +368,7 @@ class language_model_openai implements language_model_interface {
 			ob_implicit_flush(true);
 		}
 
-		// --- Debug: log the original prompt ---
+		// Debug: log the original prompt
 		$this->debug_log("ORIGINAL PROMPT: " . ($content['prompt'] ?? '(empty)'));
 
 		// URL reading is only permitted when the setting explicitly allows it
@@ -399,7 +399,7 @@ class language_model_openai implements language_model_interface {
 			)));
 		}
 
-		// --- Debug: log the detected URLs ---
+		// Debug: log the detected URLs
 		if (!empty($urls)) {
 			$this->debug_log("DETECTED URLS (" . count($urls) . "): " . implode(', ', $urls));
 		} else {
@@ -427,7 +427,7 @@ class language_model_openai implements language_model_interface {
 			}
 		}
 
-		// --- Debug: log the final prompt (truncated to 2000 chars) ---
+		// Debug: log the final prompt (truncated to 2000 chars)
 		$final_prompt = $content['prompt'] ?? '';
 		$truncated = (strlen($final_prompt) > 2000)
 			? substr($final_prompt, 0, 2000) . '... [TRUNCATED, total ' . strlen($final_prompt) . ' chars]'
