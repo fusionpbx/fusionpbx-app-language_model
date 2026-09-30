@@ -3,11 +3,11 @@
 //application details
 	$apps[$x]['name'] = 'Language Model';
 	$apps[$x]['uuid'] = 'a354fd53-2217-4e2e-b922-2daba2fc167a';
-		$apps[$x]['category'] = 'AI';
-		$apps[$x]['subcategory'] = '';
-		$apps[$x]['version'] = '1.1';
-		$apps[$x]['license'] = '';
-		$apps[$x]['url'] = 'http://www.fusionpbx.com';
+	$apps[$x]['category'] = 'AI';
+	$apps[$x]['subcategory'] = '';
+	$apps[$x]['version'] = '1.1';
+	$apps[$x]['license'] = '';
+	$apps[$x]['url'] = 'http://www.fusionpbx.com';
 	$apps[$x]['description']['en-us'] = 'Language model class interface.';
 
 //permission details
@@ -36,7 +36,7 @@
 	$apps[$x]['default_settings'][$y]['default_setting_name'] = "text";
 	$apps[$x]['default_settings'][$y]['default_setting_value'] = "ollama";
 	$apps[$x]['default_settings'][$y]['default_setting_enabled'] = "false";
-	$apps[$x]['default_settings'][$y]['default_setting_description'] = "Language Model engine. Options: ollama, openai";
+	$apps[$x]['default_settings'][$y]['default_setting_description'] = "Language Model engine. Options: ollama, openai, llama";
 	$y++;
 	$apps[$x]['default_settings'][$y]['default_setting_uuid'] = "c212e66f-b799-4014-8964-5bc88b2cda21";
 	$apps[$x]['default_settings'][$y]['default_setting_category'] = "language_model";
