@@ -84,6 +84,17 @@ if (permission_exists('language_model_upload') && !empty($_FILES['file']['tmp_na
 		exit;
 	}
 
+	// Verify that the upload is a real image within a sane size limit
+	if ($file['size'] > 10485760) {
+		echo "File upload error: file too large";
+		exit;
+	}
+	$image_info = @getimagesize($file['tmp_name']);
+	if ($image_info === false) {
+		echo "File upload error: not a valid image";
+		exit;
+	}
+
 	$file_content_base64 = base64_encode(file_get_contents($file['tmp_name']));
 
 	$request_data['prompt'] = $request_text;

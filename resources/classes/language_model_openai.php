@@ -47,13 +47,16 @@ class language_model_openai implements language_model_interface {
 		$timestamp = date('Y-m-d H:i:s');
 		$line = "[{$timestamp}] [openai] {$message}" . PHP_EOL;
 
-		// Ensure the log directory exists
+		// Ensure the log directory exists (not world-writable)
 		$dir = dirname($log_file);
 		if (!is_dir($dir)) {
-			@mkdir($dir, 0777, true);
+			@mkdir($dir, 0755, true);
 		}
+		@chmod($dir, 0755);
 
+		// Prompts may contain personal data: keep the log owner/group readable only
 		@file_put_contents($log_file, $line, FILE_APPEND | LOCK_EX);
+		@chmod($log_file, 0640);
 	}
 
 	/**
@@ -85,7 +88,23 @@ class language_model_openai implements language_model_interface {
 			return '';
 		}
 
-		// IPv4 checks
+		// IPv6 checks: ::1, fe80::/10, fc00::/7 and IPv4-mapped forms
+		if (strlen($packed) === 16) {
+			$first_byte = unpack('C', $packed)[1];
+			$second_byte = unpack('C', $packed, 1)[2];
+			$is_loopback = ($packed === inet_pton('::1'));
+			$is_link_local = ($first_byte === 0xfe && ($second_byte & 0xc0) === 0x80);
+			$is_unique_local = (($first_byte & 0xfe) === 0xfc);
+			if ($is_loopback || $is_link_local || $is_unique_local) {
+				return '';
+			}
+			// Unmap IPv4-mapped IPv6 (::ffff:a.b.c.d) so the IPv4 checks below apply
+			if (substr($packed, 0, 10) === str_repeat("\x00", 10) && substr($packed, 10, 2) === "\xff\xff") {
+				$packed = substr($packed, 12);
+			}
+		}
+
+		// IPv4 checks (also reached for unmapped IPv4-mapped IPv6 addresses)
 		if (strlen($packed) === 4) {
 			// 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16, 0.0.0.0/8
 			$first_octet = unpack('C', $packed)[1];
@@ -96,17 +115,6 @@ class language_model_openai implements language_model_interface {
 				|| $first_octet === 127
 				|| ($first_octet === 169 && $second_octet === 254)
 				|| $first_octet === 0) {
-				return '';
-			}
-		}
-
-		// IPv6 checks: ::1, fe80::/10, fc00::/7
-		if (strlen($packed) === 16) {
-			$is_loopback = ($packed === inet_pton('::1'));
-			$is_link_local = (unpack('n2', substr($packed, 0, 2))[1] === 0xfe80);
-			$is_unique_local = (bindec(substr(dechex(unpack('n', $packed)[1]), 0, 1)) === 1
-				&& (int)substr(dechex(unpack('n', $packed)[1]), 0, 1) >= 7);
-			if ($is_loopback || $is_link_local || $is_unique_local) {
 				return '';
 			}
 		}
@@ -214,6 +222,25 @@ class language_model_openai implements language_model_interface {
 	 *
 	 * @return array intent, url, language and matched_keywords
 	 */
+	/**
+	 * chat
+	 * This engine does not support tool-calling chat; the agent_code service
+	 * requires the ollama engine.
+	 */
+	public function chat(string $model, array $messages, ?array $tools = null, array $opts = []): array {
+		return [
+			'ok' => false,
+			'content' => '',
+			'tool_calls' => [],
+			'thinking' => '',
+			'prompt_tokens' => 0,
+			'completion_tokens' => 0,
+			'eval_duration' => 0,
+			'total_duration' => 0,
+			'error' => 'the ' . __CLASS__ . ' engine does not support chat with tool calling; use the ollama engine',
+		];
+	}
+
 	public function parse_read_prompt(string $prompt, ?string $language = null): array {
 		$url = $this->extract_url($prompt);
 
@@ -247,8 +274,8 @@ class language_model_openai implements language_model_interface {
 		//	$endpoint = '/api/generate';
 		//}
 
-		// Set default empty string
-		$response = '';
+		// Set the default empty array
+		$response = [];
 
 		// Set the url
 		if (empty($this->api_url)) {
@@ -263,10 +290,6 @@ class language_model_openai implements language_model_interface {
 
 		// Set curl options
 		curl_setopt($ch, CURLOPT_URL, $api_url);
-		if (!empty($json_data)) {
-			curl_setopt($ch, CURLOPT_POST, true);
-			curl_setopt($ch, CURLOPT_POSTFIELDS, $json_data);
-		}
 
 		// set the request headers
 		curl_setopt($ch, CURLOPT_HTTPHEADER, array(
@@ -286,13 +309,13 @@ class language_model_openai implements language_model_interface {
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
 		// Execute the request Note: The response will be empty if stream is true
-		$response = curl_exec($ch);
+		$response_body = curl_exec($ch);
 
 		// Check for errors
 		if (curl_errno($ch)) {
-			$response = [];
 			$response['error']['error_message'] = curl_error($ch)."\n";
 			$response['error']['error_code'] = curl_errno($ch)."\n";
+			unset($ch);
 			return $response;
 		}
 
@@ -301,28 +324,33 @@ class language_model_openai implements language_model_interface {
 		//print_r($debug_info);
 
 		// Output raw response
-		//echo "\nRaw Response:\n" . $response . "\n";
+		//echo "\nRaw Response:\n" . $response_body . "\n";
 		//exit;
 
-		// Decode and display JSON response if valid
-		if (json_last_error() === JSON_ERROR_NONE) {
-			$decoded_response = json_decode($response, true);
-			if (!empty($decoded_response['models'])) {
-				$response = $decoded_response['models'];
-			}
-		}
-
-		// Build the array of the list of models
-		if (!empty($decoded_response['data'])) {
-			$response = [];
-			foreach($decoded_response['data'] as $row) {
-				$response[]['model'] = $row['id'];
-			}
-		}
+		// Decode the JSON response
+		$decoded_response = json_decode($response_body, true);
 
 		// Check for JSON error
 		if (json_last_error() !== JSON_ERROR_NONE) {
 			$response['error'] = "JSON Decode Error: " . json_last_error_msg() . "\n";
+		}
+		elseif (is_array($decoded_response)) {
+
+			// Build the array of the list of models
+			if (!empty($decoded_response['data']) && is_array($decoded_response['data'])) {
+				foreach($decoded_response['data'] as $row) {
+					if (is_array($row) && !empty($row['id'])) {
+						$response[]['model'] = $row['id'];
+					}
+				}
+			}
+			elseif (!empty($decoded_response['models']) && is_array($decoded_response['models'])) {
+				$response = $decoded_response['models'];
+			}
+			elseif (isset($decoded_response['error']) && !empty($decoded_response['error']['message'])) {
+				// The API returned an error (e.g. invalid API key)
+				$response['error'] = $decoded_response['error']['message'] . "\n";
+			}
 		}
 
 		// Close curl session

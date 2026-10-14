@@ -72,7 +72,23 @@ class language_model_llama implements language_model_interface {
 			return '';
 		}
 
-		// IPv4 checks
+		// IPv6 checks: ::1, fe80::/10, fc00::/7 and IPv4-mapped forms
+		if (strlen($packed) === 16) {
+			$first_byte = unpack('C', $packed)[1];
+			$second_byte = unpack('C', $packed, 1)[2];
+			$is_loopback = ($packed === inet_pton('::1'));
+			$is_link_local = ($first_byte === 0xfe && ($second_byte & 0xc0) === 0x80);
+			$is_unique_local = (($first_byte & 0xfe) === 0xfc);
+			if ($is_loopback || $is_link_local || $is_unique_local) {
+				return '';
+			}
+			// Unmap IPv4-mapped IPv6 (::ffff:a.b.c.d) so the IPv4 checks below apply
+			if (substr($packed, 0, 10) === str_repeat("\x00", 10) && substr($packed, 10, 2) === "\xff\xff") {
+				$packed = substr($packed, 12);
+			}
+		}
+
+		// IPv4 checks (also reached for unmapped IPv4-mapped IPv6 addresses)
 		if (strlen($packed) === 4) {
 			// 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16, 0.0.0.0/8
 			$first_octet = unpack('C', $packed)[1];
@@ -83,17 +99,6 @@ class language_model_llama implements language_model_interface {
 				|| $first_octet === 127
 				|| ($first_octet === 169 && $second_octet === 254)
 				|| $first_octet === 0) {
-				return '';
-			}
-		}
-
-		// IPv6 checks: ::1, fe80::/10, fc00::/7
-		if (strlen($packed) === 16) {
-			$is_loopback = ($packed === inet_pton('::1'));
-			$is_link_local = (unpack('n2', substr($packed, 0, 2))[1] === 0xfe80);
-			$is_unique_local = (bindec(substr(dechex(unpack('n', $packed)[1]), 0, 1)) === 1
-				&& (int)substr(dechex(unpack('n', $packed)[1]), 0, 1) >= 7);
-			if ($is_loopback || $is_link_local || $is_unique_local) {
 				return '';
 			}
 		}
@@ -422,6 +427,20 @@ class language_model_llama implements language_model_interface {
 	 *     matched_keywords: string[]
 	 * }
 	 */
+	public function chat(string $model, array $messages, ?array $tools = null, array $opts = []): array {
+		return [
+			'ok' => false,
+			'content' => '',
+			'tool_calls' => [],
+			'thinking' => '',
+			'prompt_tokens' => 0,
+			'completion_tokens' => 0,
+			'eval_duration' => 0,
+			'total_duration' => 0,
+			'error' => 'the ' . __CLASS__ . ' engine does not support chat with tool calling; use the ollama engine',
+		];
+	}
+
 	public function parse_read_prompt(string $prompt, ?string $language = null): array {
 		$result = [
 			'intent'           => false,

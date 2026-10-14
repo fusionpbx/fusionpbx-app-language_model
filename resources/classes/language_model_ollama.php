@@ -22,7 +22,7 @@ class language_model_ollama implements language_model_interface {
 		$this->api_url = $settings->get('language_model', 'api_url', '');
 
 		//get the config object if not already defined
-		if (!empty($config)) {
+		if (empty($config)) {
 			$config = new config;
 		}
 
@@ -68,7 +68,23 @@ class language_model_ollama implements language_model_interface {
 			return '';
 		}
 
-		// IPv4 checks
+		// IPv6 checks: ::1, fe80::/10, fc00::/7 and IPv4-mapped forms
+		if (strlen($packed) === 16) {
+			$first_byte = unpack('C', $packed)[1];
+			$second_byte = unpack('C', $packed, 1)[2];
+			$is_loopback = ($packed === inet_pton('::1'));
+			$is_link_local = ($first_byte === 0xfe && ($second_byte & 0xc0) === 0x80);
+			$is_unique_local = (($first_byte & 0xfe) === 0xfc);
+			if ($is_loopback || $is_link_local || $is_unique_local) {
+				return '';
+			}
+			// Unmap IPv4-mapped IPv6 (::ffff:a.b.c.d) so the IPv4 checks below apply
+			if (substr($packed, 0, 10) === str_repeat("\x00", 10) && substr($packed, 10, 2) === "\xff\xff") {
+				$packed = substr($packed, 12);
+			}
+		}
+
+		// IPv4 checks (also reached for unmapped IPv4-mapped IPv6 addresses)
 		if (strlen($packed) === 4) {
 			// 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16, 0.0.0.0/8
 			$first_octet = unpack('C', $packed)[1];
@@ -79,17 +95,6 @@ class language_model_ollama implements language_model_interface {
 				|| $first_octet === 127
 				|| ($first_octet === 169 && $second_octet === 254)
 				|| $first_octet === 0) {
-				return '';
-			}
-		}
-
-		// IPv6 checks: ::1, fe80::/10, fc00::/7
-		if (strlen($packed) === 16) {
-			$is_loopback = ($packed === inet_pton('::1'));
-			$is_link_local = (unpack('n2', substr($packed, 0, 2))[1] === 0xfe80);
-			$is_unique_local = (bindec(substr(dechex(unpack('n', $packed)[1]), 0, 1)) === 1
-				&& (int)substr(dechex(unpack('n', $packed)[1]), 0, 1) >= 7);
-			if ($is_loopback || $is_link_local || $is_unique_local) {
 				return '';
 			}
 		}
@@ -412,17 +417,15 @@ class language_model_ollama implements language_model_interface {
 			//echo "\nRaw Response:\n" . $response . "\n";
 			//exit;
 
-			// Decode and display JSON response if valid
-			if (json_last_error() === JSON_ERROR_NONE) {
-				$decoded_response = json_decode($response, true);
-				if (!empty($decoded_response['response'])) {
-					$response = $decoded_response['response'];
-				}
-			}
-
-			// Check for JSON error
-			if (json_last_error() !== JSON_ERROR_NONE) {
-				$response = "JSON Decode Error: " . json_last_error_msg() . "\n";
+			// Decode the JSON response envelope returned by /api/generate
+			// The model response is returned as-is in the "response" key,
+			// regardless of its content format (text, JSON or XML)
+			$decoded_response = json_decode($response, true);
+			if (json_last_error() === JSON_ERROR_NONE
+				&& is_array($decoded_response)
+				&& array_key_exists('response', $decoded_response)
+				&& is_string($decoded_response['response'])) {
+				$response = $decoded_response['response'];
 			}
 		}
 
@@ -449,6 +452,500 @@ class language_model_ollama implements language_model_interface {
 		*/
 
 		return $response;
+	}
+
+	/**
+	 * Validate a caller-supplied chat API URL.
+	 * Returns null when the URL is usable, or an error message to report
+	 * when it is not (must be a well-formed http/https URL with a host).
+	 * Private hosts are intentionally allowed: a self-hosted Ollama server
+	 * is normally reached over the local network, and the override value
+	 * comes from server-side settings, not from end-user input.
+	 */
+	private function validate_chat_api_url(string $url): ?string {
+		$parsed = parse_url($url);
+		if (!$parsed || empty($parsed['host'])) {
+			return 'invalid api_url';
+		}
+		if (!in_array(strtolower($parsed['scheme'] ?? ''), ['http', 'https'], true)) {
+			return 'api_url must use http or https';
+		}
+		return null;
+	}
+
+	/**
+	 * chat
+	 * Multi-message chat against Ollama /api/chat with optional native tool
+	 * calling, thinking (reasoning) capture, and streaming with throttled
+	 * progress callbacks. Used by the agent_code service (the /api/generate
+	 * endpoint in request() above cannot do tool calling).
+	 *
+	 * @param string $model    Ollama model name
+	 * @param array  $messages Messages in Ollama /api/chat format:
+	 *                         ['role' => ..., 'content' => ..., 'name'?, 'tool_calls'?, 'images'?]
+	 * @param array|null $tools Ollama 'tools' array (function schemas) or null
+	 * @param array  $opts      ['temperature' => float, 'timeout' => int, 'api_url' => string,
+	 *                          'think' => bool,        ask thinking models to reason (Ollama 'think')
+	 *                          'stream' => bool,       use the streaming endpoint (default: with on_progress)
+	 *                          'on_progress' => callable] invoked (throttled ~1s) while a stream
+	 *                          arrives, with ['thinking' => string, 'content' => string,
+	 *                          'completion_tokens' => int, 'done' => bool]
+	 * @return array ['ok', 'content', 'tool_calls', 'thinking', 'prompt_tokens',
+	 *               'completion_tokens', 'eval_duration', 'total_duration', 'error']
+	 */
+	public function chat(string $model, array $messages, ?array $tools = null, array $opts = []): array {
+
+		// Default result so every path returns the same shape
+		$result = [
+			'ok' => false,
+			'content' => '',
+			'tool_calls' => [],
+			'thinking' => '',
+			'prompt_tokens' => 0,
+			'completion_tokens' => 0,
+			'eval_duration' => 0,
+			'total_duration' => 0,
+			'error' => '',
+		];
+
+		if (empty($messages)) {
+			$result['error'] = 'no messages provided';
+			return $result;
+		}
+
+		// Use the selected model or the configured default
+		if (!empty($model)) {
+			$this->api_model = $model;
+		}
+		if (empty($this->api_model)) {
+			global $settings;
+			$this->api_model = $settings->get('language_model', 'api_model', '');
+		}
+		if (empty($this->api_model)) {
+			$result['error'] = 'no model selected';
+			return $result;
+		}
+
+		// Build the message payloads (only the keys each role actually uses)
+		$payload_messages = [];
+		foreach ($messages as $m) {
+			$d = [
+				'role' => $m['role'] ?? 'user',
+				'content' => $m['content'] ?? '',
+			];
+			if (!empty($m['name'])) {
+				$d['name'] = $m['name'];
+			}
+			if (!empty($m['tool_calls'])) {
+				$d['tool_calls'] = $m['tool_calls'];
+			}
+			if (!empty($m['images'])) {
+				$d['images'] = $m['images'];
+			}
+			$payload_messages[] = $d;
+		}
+
+		// Prepare the request (same shape as Ollama /api/chat).
+		// Streaming is on by default (live thinking + token feedback); a
+		// caller can force the non-streaming path with 'stream' => false.
+		$use_stream = !isset($opts['stream']) || (bool)$opts['stream'];
+		$data = [
+			'model' => $this->api_model,
+			'messages' => $payload_messages,
+			'stream' => $use_stream,
+			'options' => [
+				'temperature' => $opts['temperature'] ?? 0.3,
+			],
+		];
+		if (!empty($tools)) {
+			$data['tools'] = $tools;
+		}
+		//ask thinking models to reason (ignored by models without thinking)
+		if (!empty($opts['think'])) {
+			$data['think'] = true;
+		}
+		$json_data = json_encode($data);
+		if ($json_data === false) {
+			$result['error'] = 'could not encode chat payload';
+			return $result;
+		}
+
+		// Set the URL (allow an override; default is the configured Ollama host)
+		$api_url = $opts['api_url'] ?? $this->api_url;
+		if (empty($api_url)) {
+			$api_url = 'http://127.0.0.1:11434';
+		}
+		// Reject malformed or non-http(s) overrides (e.g. file:// or gopher://)
+		$url_error = $this->validate_chat_api_url($api_url);
+		if ($url_error !== null) {
+			$result['error'] = $url_error;
+			return $result;
+		}
+		$api_url = rtrim($api_url, '/') . '/api/chat';
+
+		if ($use_stream) {
+			$result = $this->chat_stream($api_url, $json_data, $tools, $opts, $result);
+			return $result;
+		}
+
+		// Initialize curl session
+		$ch = curl_init();
+		curl_setopt_array($ch, [
+			CURLOPT_URL => $api_url,
+			CURLOPT_POST => true,
+			CURLOPT_POSTFIELDS => $json_data,
+			CURLOPT_RETURNTRANSFER => true,
+			CURLOPT_CONNECTTIMEOUT => 3,
+			CURLOPT_TIMEOUT => $opts['timeout'] ?? 300,
+			CURLOPT_HTTPHEADER => array(
+				"Content-Type: application/json"
+			)
+		]);
+
+		// Execute the request
+		$response = curl_exec($ch);
+		$curl_error = curl_errno($ch) ? curl_error($ch) : '';
+		$http_code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+
+		// Close curl session
+		unset($ch);
+
+		// Check for transport errors
+		if ($curl_error !== '') {
+			$result['error'] = 'curl error: ' . $curl_error;
+			return $result;
+		}
+
+		// Check the HTTP status
+		if ($http_code < 200 || $http_code >= 300) {
+			$result['error'] = 'HTTP ' . $http_code . ' ' . substr((string)$response, 0, 300);
+			return $result;
+		}
+
+		// Decode the response envelope
+		$decoded = json_decode((string)$response, true);
+		if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded) || !isset($decoded['message'])) {
+			$result['error'] = 'bad response body: ' . substr((string)$response, 0, 300);
+			return $result;
+		}
+
+		// Extract the reply content
+		$content = $decoded['message']['content'] ?? '';
+		if (!is_string($content)) {
+			$content = '';
+		}
+
+		// Extract native tool calls (arguments may arrive as an object or a JSON string)
+		$tool_calls = [];
+		if (!empty($decoded['message']['tool_calls']) && is_array($decoded['message']['tool_calls'])) {
+			foreach ($decoded['message']['tool_calls'] as $tc) {
+				if (!is_array($tc) || !isset($tc['function']['name'])) {
+					continue;
+				}
+				$arguments = $tc['function']['arguments'] ?? [];
+				if (is_string($arguments)) {
+					$arguments = json_decode($arguments, true);
+					if (!is_array($arguments)) {
+						$arguments = [];
+					}
+				}
+				if (!is_array($arguments)) {
+					$arguments = [];
+				}
+				$tool_calls[] = [
+					'name' => $tc['function']['name'],
+					'arguments' => $arguments,
+				];
+			}
+		}
+
+		// An empty reply with no tool calls counts as a failure
+		if (trim($content) === '' && empty($tool_calls)) {
+			$result['error'] = 'model returned an empty reply';
+			return $result;
+		}
+
+		$result['ok'] = true;
+		$result['content'] = trim($content);
+		$result['tool_calls'] = $tool_calls;
+		//reasoning models (qwen3, deepseek-r1, …) may carry their thinking here
+		$thinking = $decoded['message']['thinking'] ?? '';
+		$result['thinking'] = is_string($thinking) ? $thinking : '';
+		$result['prompt_tokens'] = (int)($decoded['prompt_eval_count'] ?? 0);
+		$result['completion_tokens'] = (int)($decoded['eval_count'] ?? 0);
+		$result['eval_duration'] = (int)($decoded['eval_duration'] ?? 0);
+		$result['total_duration'] = (int)($decoded['total_duration'] ?? 0);
+		return $result;
+	}
+
+	/**
+	 * chat_stream
+	 * Streaming variant of chat(): Ollama /api/chat with 'stream' => true is
+	 * newline-delimited JSON (one object per token/chunk). This accumulates
+	 * the message content, the reasoning (thinking) and the native tool
+	 * calls (their name/arguments arrive as string fragments that are
+	 * concatenated per call index), and reports throttled progress through
+	 * $opts['on_progress'] while the model thinks and generates.
+	 *
+	 * @param string $api_url   full /api/chat URL
+	 * @param string $json_data encoded chat payload ('stream' already true)
+	 * @param array|null $tools tool schemas (Ollama format), used to recover a
+	 *                          tool name that some models stream without
+	 * @param array  $opts      ['timeout' => int, 'on_progress' => callable]
+	 * @param array  $result    base result (kept so every path has the same shape)
+	 * @return array same shape as chat()
+	 */
+	private function chat_stream(string $api_url, string $json_data, ?array $tools, array $opts, array $result): array {
+
+		$on_progress = isset($opts['on_progress']) && is_callable($opts['on_progress']) ? $opts['on_progress'] : null;
+
+		//accumulated state (the writer closure updates it as chunks arrive)
+		$acc = [
+			'line' => '',              //partial NDJSON line buffer
+			'content' => '',
+			'thinking' => '',
+			'tool_calls' => [],        //[['name' => '', 'arguments' => 'fragment…']]
+			'prompt_tokens' => 0,
+			'completion_tokens' => 0,
+			'eval_duration' => 0,
+			'total_duration' => 0,
+			'done' => false,
+			'saw_chunk' => false,
+			'fatal' => '',
+			'last_notify' => 0.0,
+		];
+
+		//one complete NDJSON line → accumulator (by reference: shared state)
+		$process_line = function (string $line) use (&$acc): void {
+			$line = trim($line);
+			if ($line === '') {
+				return;
+			}
+			$obj = json_decode($line, true);
+			if (!is_array($obj)) {
+				$acc['fatal'] = 'bad stream line: ' . substr($line, 0, 200);
+				return;
+			}
+			if (!empty($obj['error'])) {
+				$acc['fatal'] = is_string($obj['error']) ? $obj['error'] : 'stream error';
+				return;
+			}
+			//final chunk: carries the authoritative token counts + timings
+			if (!empty($obj['done'])) {
+				$acc['done'] = true;
+				if (isset($obj['prompt_eval_count'])) {
+					$acc['prompt_tokens'] = (int)$obj['prompt_eval_count'];
+				}
+				if (isset($obj['eval_count'])) {
+					$acc['completion_tokens'] = (int)$obj['eval_count'];
+				}
+				$acc['eval_duration'] = (int)($obj['eval_duration'] ?? $acc['eval_duration']);
+				$acc['total_duration'] = (int)($obj['total_duration'] ?? $acc['total_duration']);
+				return;
+			}
+			if (isset($obj['eval_count'])) {
+				//every data chunk reports the running completion count
+				$acc['completion_tokens'] = (int)$obj['eval_count'];
+			}
+			$msg = $obj['message'] ?? null;
+			if (!is_array($msg)) {
+				return; //keep-alive ping while the model is loading
+			}
+			$acc['saw_chunk'] = true;
+			if (isset($msg['content']) && is_string($msg['content'])) {
+				$acc['content'] .= $msg['content'];
+			}
+			if (isset($msg['thinking']) && is_string($msg['thinking'])) {
+				$acc['thinking'] .= $msg['thinking'];
+			}
+			//tool calls stream as fragments: append name/arguments per index
+			if (!empty($msg['tool_calls']) && is_array($msg['tool_calls'])) {
+				foreach ($msg['tool_calls'] as $i => $tc) {
+					if (!is_array($tc)) {
+						continue;
+					}
+					if (!isset($acc['tool_calls'][$i])) {
+						$acc['tool_calls'][$i] = ['name' => '', 'arguments' => ''];
+					}
+					$fn = $tc['function'] ?? [];
+					if (isset($fn['name']) && is_string($fn['name'])) {
+						$acc['tool_calls'][$i]['name'] .= $fn['name'];
+					}
+					if (isset($fn['arguments'])) {
+						if (is_string($fn['arguments'])) {
+							$acc['tool_calls'][$i]['arguments'] .= $fn['arguments'];
+						} elseif (is_array($fn['arguments'])) {
+							$j = json_encode($fn['arguments']);
+							if ($j !== false) {
+								$acc['tool_calls'][$i]['arguments'] .= $j;
+							}
+						}
+					}
+				}
+			}
+		};
+
+		//throttled progress notification (at most once per second, always on done)
+		$notify = function () use (&$acc, $on_progress): void {
+			if ($on_progress === null) {
+				return;
+			}
+			$now = microtime(true);
+			if (!$acc['done'] && ($now - $acc['last_notify']) < 1.0) {
+				return;
+			}
+			$acc['last_notify'] = $now;
+			try {
+				$on_progress([
+					'thinking' => $acc['thinking'],
+					'content' => $acc['content'],
+					'completion_tokens' => (int)$acc['completion_tokens'],
+					'done' => (bool)$acc['done'],
+				]);
+			} catch (Throwable $ex) {
+				//progress bookkeeping must never break the transfer
+			}
+		};
+
+		$writer = function ($ch, $data) use ($process_line, $notify, &$acc) {
+			$acc['line'] .= (string)$data;
+			$pos = 0;
+			while (($nl = strpos($acc['line'], "\n", $pos)) !== false) {
+				$process_line(substr($acc['line'], $pos, $nl - $pos));
+				if ($acc['fatal'] !== '') {
+					return 0; //abort the transfer
+				}
+				$pos = $nl + 1;
+			}
+			if ($pos > 0) {
+				$acc['line'] = substr($acc['line'], $pos);
+			}
+			$notify();
+			return strlen((string)$data);
+		};
+
+		$ch = curl_init();
+		curl_setopt_array($ch, [
+			CURLOPT_URL => $api_url,
+			CURLOPT_POST => true,
+			CURLOPT_POSTFIELDS => $json_data,
+			CURLOPT_RETURNTRANSFER => false,
+			CURLOPT_WRITEFUNCTION => $writer,
+			CURLOPT_CONNECTTIMEOUT => 3,
+			CURLOPT_TIMEOUT => $opts['timeout'] ?? 300,
+			CURLOPT_HTTPHEADER => array(
+				"Content-Type: application/json"
+			)
+		]);
+
+		$response = curl_exec($ch);
+		$curl_error = curl_errno($ch) ? curl_error($ch) : '';
+		$http_code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+		unset($ch);
+
+		//a final line without a trailing newline still has to be processed
+		if ($acc['fatal'] === '' && $acc['line'] !== '') {
+			$process_line($acc['line']);
+			$acc['line'] = '';
+			$notify();
+		}
+		if ($acc['fatal'] !== '') {
+			$result['error'] = $acc['fatal'];
+			return $result;
+		}
+		if ($http_code < 200 || $http_code >= 300) {
+			$result['error'] = 'HTTP ' . $http_code;
+			return $result;
+		}
+		if ($curl_error !== '') {
+			$result['error'] = 'curl error: ' . $curl_error;
+			return $result;
+		}
+		if (!$acc['done']) {
+			$result['error'] = $acc['saw_chunk'] ? 'stream ended before the model finished' : 'stream produced no data (timeout?)';
+			return $result;
+		}
+
+		//assemble the reply: shape tool calls the same way chat() does
+		$content = trim($acc['content']);
+		$tool_calls = [];
+		ksort($acc['tool_calls']);
+		foreach ($acc['tool_calls'] as $tc) {
+			$args = [];
+			if ($tc['arguments'] !== '') {
+				$decoded_args = json_decode($tc['arguments'], true);
+				if (is_array($decoded_args)) {
+					$args = $decoded_args;
+				}
+			}
+			//some models stream the call without a name: recover it from the
+			//argument keys against the provided tool schemas
+			$name = $tc['name'] !== '' ? $tc['name'] : $this->match_tool_name($args, $tools);
+			if ($name === '') {
+				continue; //no name and no way to find one: not a usable call
+			}
+			$tool_calls[] = [
+				'name' => $name,
+				'arguments' => $args,
+			];
+		}
+		if ($content === '' && empty($tool_calls)) {
+			$result['error'] = 'model returned an empty reply';
+			return $result;
+		}
+
+		$result['ok'] = true;
+		$result['content'] = $content;
+		$result['tool_calls'] = $tool_calls;
+		$result['thinking'] = $acc['thinking'];
+		$result['prompt_tokens'] = $acc['prompt_tokens'];
+		$result['completion_tokens'] = $acc['completion_tokens'];
+		$result['eval_duration'] = $acc['eval_duration'];
+		$result['total_duration'] = $acc['total_duration'];
+		return $result;
+	}
+
+	/**
+	 * match_tool_name
+	 * Some models stream a tool call with an empty name (Ollama 0.32.x).
+	 * When that happens, pick the provided tool whose parameter names best
+	 * match the call's argument keys; with a single tool defined, that tool
+	 * wins even for an empty argument list.
+	 *
+	 * @param array      $args  decoded tool call arguments
+	 * @param array|null $tools Ollama-format tool schemas
+	 * @return string tool name, or '' when nothing matches
+	 */
+	private function match_tool_name(array $args, ?array $tools): string {
+		if (empty($tools) || !is_array($tools)) {
+			return '';
+		}
+		$keys = array_keys($args);
+		if ($keys === []) {
+			if (count($tools) === 1) {
+				return (string)($tools[0]['name'] ?? '');
+			}
+			return '';
+		}
+		$best = '';
+		$best_score = 0;
+		foreach ($tools as $t) {
+			if (!is_array($t)) {
+				continue;
+			}
+			$props = array_keys((array)($t['parameters']['properties'] ?? []));
+			$score = 0;
+			foreach ($keys as $k) {
+				if (in_array($k, $props, true)) {
+					$score++;
+				}
+			}
+			if ($score > $best_score) {
+				$best_score = $score;
+				$best = (string)($t['name'] ?? '');
+			}
+		}
+		return $best;
 	}
 
 	/**
@@ -513,13 +1010,12 @@ class language_model_ollama implements language_model_interface {
 		return $result;
 	}
 
-
 	/**
 	 * Language-specific keyword sets (lowercase for matching)
 	 *
 	 * @return string[]  Regex-safe keyword patterns for the given language.
 	 */
-	function get_intent_keywords(string $language): array {
+	public function get_intent_keywords(string $language): array {
 		$sets = [
 			'en' => [
 				'\bread\b', '\bopen\b', '\bview\b', '\blook at\b',
@@ -585,7 +1081,7 @@ class language_model_ollama implements language_model_interface {
 	 * @param string[] $keywords  Array of regex fragments.
 	 * @return string[]           Human-readable matched terms.
 	 */
-	function find_intent_keywords(string $text, array $keywords): array {
+	public function find_intent_keywords(string $text, array $keywords): array {
 		$matches = [];
 
 		foreach ($keywords as $pattern) {
@@ -604,9 +1100,11 @@ class language_model_ollama implements language_model_interface {
 	 * Extract the first valid URL found in the text.
 	 * Supports http(s), ftp, and protocol-less domains.
 	 *
-	 * 
+	 * Normalizes to https:// if no scheme is present.
+	 * @param string $text  Input text to search for a URL.
+	 * @return string|null  The first matched URL, or null if none found.
 	 */
-	function extract_url(string $text): ?string	{
+	public function extract_url(string $text): ?string	{
 		$pattern = '/
 			(?:
 				(?:https?|ftp):\/\/
@@ -650,7 +1148,7 @@ class language_model_ollama implements language_model_interface {
 	// ---------------------------------------------------------------------------
 	// Simple language auto-detection (character-set heuristics)
 	// ---------------------------------------------------------------------------
-	function detect_language(string $text): string {
+	public function detect_language(string $text): string {
 		// Strip URLs / domain-like tokens first, since TLDs (e.g. .com, .de, .pt)
 		// otherwise cause false positives in the word-based heuristics
 		$text = preg_replace('/[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.[a-z]{2,}(?:\\/[^\\s]*)?/i', ' ', $text);
