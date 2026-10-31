@@ -22,7 +22,7 @@ class language_model {
 	 * called when the object is created
 	 *
 	 * @param bool   $stream use the streaming endpoints when true
-	 * @param string $engine override the configured engine (ollama, openai, llama, local)
+	 * @param string $engine override the configured engine (ollama, openai, inworld, llama, local)
 	 */
 	public function __construct($stream = false, string $engine = '') {
 		//prepare to use the settings object
@@ -38,7 +38,7 @@ class language_model {
 		$engine = $engine !== '' ? $engine : (string)$settings->get('language_model', 'engine', '');
 
 		//only known engines are valid (prevents class injection via the engine name)
-		if (!in_array($engine, ['openai', 'ollama', 'llama', 'local'], true)) {
+		if (!in_array($engine, ['openai', 'ollama', 'inworld', 'llama', 'local'], true)) {
 			$engine = '';
 		}
 		$this->engine = $engine;

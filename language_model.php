@@ -97,7 +97,7 @@ if (permission_exists('language_model_upload')) {
 	echo "					<span id='form_upload_span' style='display: none;'>\n";
 	echo button::create(['type' => 'button', 'label' => $text['button-cancel'], 'icon' => $theme_button_icon_cancel, 'id' => 'btn_upload_cancel', 'onclick' => "document.getElementById('form_upload_span').style.display='none'; document.getElementById('form_upload').reset(); document.getElementById('filename').value=''; document.getElementById('btn_upload').style.display='inline';"]);
 	echo "					<input type='text' class='txt' style='width: 100px; cursor: pointer;' id='filename' placeholder='Select...' readonly onclick=\"document.getElementById('ulfile').click(); this.blur();\" onfocus='this.blur();'>\n";
-	echo "					<input type='file' id='ulfile' name='file' style='display: none;' accept='.png,.jpg,.jpeg' onchange=\"document.getElementById('filename').value = this.files[0]?.name || '';\">\n";
+	echo "					<input type='file' id='ulfile' name='file' style='display: none;' accept='.png,.jpg,.jpeg,.wav,.mp3' onchange=\"document.getElementById('filename').value = this.files[0]?.name || '';\">\n";
 	echo "				</span>\n";
 }
 
@@ -145,11 +145,13 @@ async function send_request() {
 
 	if (file_input.files.length > 0) {
 		const file = file_input.files[0];
-		const allowed_types = ['image/png', 'image/jpeg'];
-		if (allowed_types.includes(file.type)) {
+		const allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/mpeg', 'audio/mp3'];
+		// Fall back to the file extension when the browser reports an empty MIME type
+		const allowed_ext = /\.(png|jpe?g|wav|mp3)$/i;
+		if (allowed_types.includes(file.type) || (file.type === '' && allowed_ext.test(file.name))) {
 			formData.append('file', file);
 		} else {
-			console.log('Error: Only PNG or JPEG files are allowed.');
+			console.log('Error: Only PNG, JPEG, WAV or MP3 files are allowed.');
 			return;
 		}
 	}
@@ -195,6 +197,11 @@ async function send_request() {
 						content = data.response;
 					} else if (data.choices && data.choices[0]?.delta?.content) {
 						content = data.choices[0].delta.content;
+					} else if (data.error) {
+						// Show API/engine errors (e.g. invalid key, unknown model)
+						content = (typeof data.error === 'string')
+							? data.error
+							: (data.error.message || JSON.stringify(data.error));
 					}
 
 					if (content) {

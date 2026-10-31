@@ -36,7 +36,7 @@
 	$apps[$x]['default_settings'][$y]['default_setting_name'] = "text";
 	$apps[$x]['default_settings'][$y]['default_setting_value'] = "ollama";
 	$apps[$x]['default_settings'][$y]['default_setting_enabled'] = "false";
-	$apps[$x]['default_settings'][$y]['default_setting_description'] = "Language Model engine. Options: ollama, openai, llama";
+	$apps[$x]['default_settings'][$y]['default_setting_description'] = "Language Model engine. Options: ollama, openai, inworld, llama";
 	$y++;
 	$apps[$x]['default_settings'][$y]['default_setting_uuid'] = "c212e66f-b799-4014-8964-5bc88b2cda21";
 	$apps[$x]['default_settings'][$y]['default_setting_category'] = "language_model";
