@@ -328,6 +328,10 @@ class language_model_inworld implements language_model_interface {
 		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 3);
 		curl_setopt($ch, CURLOPT_TIMEOUT, 5);
 
+		// Enforce TLS certificate verification
+		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
 		// Execute the request Note: The response will be empty if stream is true
@@ -558,6 +562,10 @@ class language_model_inworld implements language_model_interface {
 		// Set timeouts
 		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
 		curl_setopt($ch, CURLOPT_TIMEOUT, 300);
+
+		// Enforce TLS certificate verification
+		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 
 		// Stream the response
 		if ($stream) {
