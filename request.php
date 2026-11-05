@@ -45,6 +45,13 @@ if (!permission_exists('language_model_view')) {
 	exit;
 }
 
+// Validate the token to prevent CSRF
+$object = new token;
+if (!$object->validate('language_model_request')) {
+	echo "access denied";
+	exit;
+}
+
 // After framework processes, re-set headers (framework may have overridden them)
 header('Content-Type: text/event-stream; charset=utf-8');
 header('Cache-Control: no-cache');

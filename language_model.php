@@ -64,7 +64,7 @@ $models = $assistant->get_models();
 
 // Create token
 $object = new token;
-$token = $object->create($_SERVER['PHP_SELF']);
+$token = $object->create('language_model_request');
 
 // Include the header
 $document['title'] = $text['title-language_model'];
@@ -127,6 +127,10 @@ echo "</div>\n";
 
 <script>
 
+// CSRF token for the request.php endpoint
+const token_name = <?php echo json_encode($token['name']); ?>;
+const token_hash = <?php echo json_encode($token['hash']); ?>;
+
 async function send_request() {
 	const model = document.getElementById('model').value;
 	const request_text = document.getElementById('request_text').value;
@@ -138,6 +142,7 @@ async function send_request() {
 	window.fullResponse = '';    // Accumulate all response content
 
 	const formData = new FormData();
+	formData.append(token_name, token_hash);
 	const file_input = document.getElementById('ulfile');
 	formData.append("stream", true);
 	formData.append("model", model);
